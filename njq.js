@@ -1,13 +1,21 @@
-function njq(selector) {
+function njq(arg) {
     let results
-    if (typeof selector === 'undefined') {
+    if (typeof arg === 'undefined') {
         results = []
-    } else if (selector instanceof Element) {
-        results = [selector]
-    } else if (typeof selector === 'string') {
-        results = Array(...document.querySelectorAll(selector))
+    } else if (arg instanceof Element) {
+        results = [arg]
+    } else if (typeof arg === 'string') {
+        // If the argument looks like HTML, parse it into a DOM fragment
+        if (arg.startsWith('<')) {
+            let fragment = document.createRange().createContextualFragment(arg)
+            results = [fragment]
+        } else {
+            // Convert the NodeList from querySelectorAll into a proper Array
+            results = Array.prototype.slice.call(document.querySelectorAll(arg))
+        }
     } else {
-        results = [...selector]
+        // Assume an array-like argument and convert to an actual array
+        results = Array.prototype.slice.call(arg)
     }
     results.__proto__ = njq.methods
     return results
@@ -43,23 +51,30 @@ njq.methods = {
         })
         return njq(closest)
     },
-    on: function() {
-        let event, delegate, cb
+    on: function(event) {
+        let delegate, cb
         let root = this
-        event = arguments[0]
+
+        // When called with 2 args, accept 2nd arg as callback
         if (arguments.length === 2) {
             cb = arguments[1]
+        // When called with 3 args, accept 2nd arg as delegate selector,
+        // 3rd arg as callback
         } else {
             delegate = arguments[1]
             cb = arguments[2]
         }
         this.each((el) => {
             el.addEventListener(event, function(ev) {
+                // If this was a delegate event binding,
+                // skip the event if the event target is not inside
+                // the delegate selection.
                 if (typeof delegate !== 'undefined') {
                     if (!root.find(delegate).includes(ev.target)) {
                         return
                     }
                 }
+                // Invoke the event handler with the event arguments
                 cb.apply(this, arguments)
             }, cb, false)
         })
@@ -77,15 +92,23 @@ njq.methods = {
         }
     },
     text: function(t) {
-        this.each((el) => el.innerText = t)
+        if (arguments.length === 0) {
+            return this[0].innerText
+        } else {
+            this.each((el) => el.innerText = t)
+        }
     },
     html: function(t) {
-        this.each((el) => el.innerHTML = t)
+        if (arguments.length === 0) {
+            return this[0].innerHTML
+        } else {
+            this.each((el) => el.innerHTML = t)
+        }
     },
     css: function(style, value) {
         if (typeof style === 'string') {
             if (typeof value === 'undefined') {
-                return this[0].style[style]
+                return getComputedStyle(this[0])[style]
             } else {
                 this.each((el) => el.style[style] = value)
             }
@@ -107,6 +130,21 @@ njq.methods = {
         this.each((el) => {
             el.classList.remove(className)
         })
+    },
+
+    replaceWith: function(replacement) {
+        let $replacement = njq(replacement)
+        let combinedHTML = []
+        $replacement.each((el) => {
+            combinedHTML.push(el.innerHTML)
+        })
+        let fragment = document.createRange().createContextualFragment(combinedHTML)
+        this.each((el) => {
+            el.parentNode.replaceChild(fragment, el)
+        })
+    },
+    replaceAll: function(target) {
+        njq(target).replaceWith(this)
     },
 
     clone: function() {
